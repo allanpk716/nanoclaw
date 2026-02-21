@@ -1,11 +1,12 @@
-# NanoClaw 部署指南 - 使用 Telegram 和 cc-switch 代理
+# NanoClaw 部署指南 - Windows + Telegram 完整流程
 
 本文档记录了在 Windows 系统上部署 NanoClaw 的完整流程，包括使用 cc-switch 作为 LLM API 代理，以及使用 Telegram 作为交互渠道的配置方法。
 
 ## 目录
 
 - [系统要求](#系统要求)
-- [部署步骤](#部署步骤)
+- [快速部署](#快速部署)
+- [详细部署步骤](#详细部署步骤)
 - [常见问题](#常见问题)
 - [配置说明](#配置说明)
 
@@ -21,7 +22,50 @@
 
 ---
 
-## 部署步骤
+## 快速部署
+
+如果你已经熟悉 NanoClaw，可以使用这个快速部署清单：
+
+```cmd
+# 1. 克隆代码
+git clone https://github.com/your-repo/nanoclaw.git
+cd nanoclaw
+
+# 2. 安装依赖
+npm install
+
+# 3. 配置环境变量（复制模板并编辑）
+copy .env.example .env
+notepad .env
+
+# 4. 构建项目
+npm run build
+
+# 5. 同步环境变量到容器
+copy .env data\env\env
+
+# 6. 创建必要的目录
+mkdir groups\main
+mkdir data\env
+mkdir data\sessions\main\.claude
+mkdir data\ipc\main
+
+# 7. 启动服务
+start.bat
+
+# 8. 获取Chat ID并发送到bot
+# 在Telegram中发送: /chatid
+
+# 9. 注册Chat到数据库（使用返回的Chat ID）
+register-chat.bat
+
+# 10. 测试
+# 在Telegram中发送: @nex 你好
+```
+
+---
+
+## 详细部署步骤
 
 ### 1. 获取 NanoClaw 代码
 
@@ -128,13 +172,23 @@ db.close();
 "
 ```
 
-### 10. 创建必要的目录
+### 10. 创建必要的目录并同步环境变量（关键步骤）
 
 ```bash
+# 创建目录
 mkdir -p groups/main
 mkdir -p data/env
+mkdir -p data/sessions/main/.claude
+mkdir -p data/ipc/main
+
+# ⚠️ 关键步骤：同步环境变量到容器
 cp .env data/env/env
 ```
+
+**⚠️ 非常重要**：
+- Docker容器通过 `data/env/env` 文件读取环境变量
+- 每次修改 `.env` 文件后，**必须**执行 `cp .env data/env/env`
+- 如果跳过这一步，会收到 "Invalid API key" 错误
 
 ### 11. 启动服务
 
@@ -178,6 +232,59 @@ tail-log.bat
 ---
 
 ## 常见问题
+
+### 问题 0: Invalid API key 错误（最重要！）
+
+**症状**: Telegram bot 收到消息，但回复 "Invalid API key · Fix external API key"
+
+**根本原因**:
+1. `data/env/env` 文件不存在或配置错误
+2. `ANTHROPIC_BASE_URL` 使用了 `127.0.0.1` 而不是 `host.docker.internal`
+
+**解决方案**:
+
+**步骤 1: 检查 `.env` 文件**
+```cmd
+type .env
+```
+
+确保包含：
+```env
+ANTHROPIC_API_KEY=sk-dummy
+ANTHROPIC_BASE_URL=http://host.docker.internal:15721  # 重要：使用 host.docker.internal
+TELEGRAM_BOT_TOKEN=<你的token>
+TELEGRAM_ONLY=true
+```
+
+**步骤 2: 同步到 `data/env/env`（关键步骤！）**
+```cmd
+copy .env data\env\env
+```
+
+**⚠️ 重要**: 每次修改 `.env` 文件后，都必须执行这个命令！
+
+**步骤 3: 清理旧容器并重启**
+```cmd
+# 停止服务
+stop.bat
+
+# 清理容器
+docker stop $(docker ps -q --filter "name=nanoclaw-")
+docker rm $(docker ps -aq --filter "name=nanoclaw-")
+
+# 重启服务
+start.bat
+```
+
+**步骤 4: 验证**
+在Telegram中发送 `@nex 你好`，应该收到AI回复。
+
+**技术说明**:
+- Docker容器通过 `data/env/env` 文件读取环境变量
+- 容器内使用 `host.docker.internal` 访问宿主机服务（不能用 `127.0.0.1`）
+- 代码已修复（v1.0+），会传递 `ANTHROPIC_BASE_URL` 到容器
+
+---
 
 ### 问题 1: 数据库 Schema 不匹配
 
@@ -701,7 +808,86 @@ docker ps -a --filter "name=nanoclaw-" -q | xargs docker rm -f
 
 ## 更新日志
 
+- **2026-02-21**: 添加"Invalid API key"问题解决方案，强调 `data/env/env` 同步的重要性
+- **2026-02-21**: 修复 `ANTHROPIC_BASE_URL` 未传递到容器的bug
 - **2026-02-21**: 初始版本，基于 Windows 10 + Docker + Telegram + cc-switch 部署经验
+
+---
+
+## 部署成功检查清单
+
+部署完成后，确认以下所有项目都已完成：
+
+- [ ] Node.js v22+ 已安装
+- [ ] Docker Desktop 正在运行
+- [ ] `.env` 文件已创建并配置正确
+- [ ] **`data/env/env` 已同步（`copy .env data\env\env`）** ⚠️
+- [ ] `ANTHROPIC_BASE_URL` 使用 `host.docker.internal`（不是 `127.0.0.1`）
+- [ ] cc-switch 代理在端口 15721 运行
+- [ ] Telegram bot token 有效
+- [ ] 项目已构建（`npm run build`）
+- [ ] 必要的目录已创建（`groups/main`, `data/env`, `data/sessions`, `data/ipc`）
+- [ ] Chat ID 已注册到数据库
+- [ ] 服务已启动（`start.bat`）
+- [ ] **在Telegram中测试成功，收到AI回复** ✅
+
+---
+
+## 快速故障排查流程
+
+如果遇到问题，按以下顺序排查：
+
+### 1. 检查服务状态
+```cmd
+tasklist | findstr node.exe
+```
+应该看到1个node进程。如果有多个，执行 `stop.bat` 然后重新 `start.bat`。
+
+### 2. 检查环境变量同步
+```cmd
+fc .env data\env\env
+```
+应该没有差异。如果有差异，执行 `copy .env data\env\env` 并重启服务。
+
+### 3. 检查API代理
+```cmd
+curl http://127.0.0.1:15721/health
+```
+应该返回 `{"status":"healthy",...}`
+
+### 4. 检查容器日志
+```cmd
+docker logs $(docker ps -lq --filter "name=nanoclaw-")
+```
+查看是否有错误信息。
+
+### 5. 检查数据库
+```cmd
+node -e "import Database from 'better-sqlite3'; const db = new Database('store/messages.db'); console.log(db.prepare('SELECT * FROM registered_groups').all());"
+```
+确认Chat ID已注册。
+
+### 6. 完全重启（最后手段）
+```cmd
+# 停止所有
+stop.bat
+
+# 清理容器
+docker stop $(docker ps -q --filter "name=nanoclaw-")
+docker rm $(docker ps -aq --filter "name=nanoclaw-")
+
+# 确认环境变量已同步
+copy .env data\env\env
+
+# 重新构建（如果有代码更新）
+npm run build
+
+# 启动
+start.bat
+
+# 测试
+# 在Telegram中发送: @nex 你好
+```
 
 ---
 
