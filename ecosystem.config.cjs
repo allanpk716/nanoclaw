@@ -9,15 +9,7 @@ module.exports = {
     autorestart: true,
     watch: false,
     max_memory_restart: '1G',
-    env: {
-      NODE_ENV: 'production',
-      ANTHROPIC_API_KEY: 'sk-dummy',
-      ANTHROPIC_BASE_URL: 'http://host.docker.internal:15721',
-      ASSISTANT_NAME: 'nex',
-      ASSISTANT_HAS_OWN_NUMBER: 'false',
-      TELEGRAM_BOT_TOKEN: 'YOUR_TELEGRAM_BOT_TOKEN_HERE',
-      TELEGRAM_ONLY: 'true'
-    },
+    env_file: '.env',  // Load environment variables from .env file
     error_file: 'C:\\WorkSpace\\agent\\nanoclaw\\logs\\pm2-error.log',
     out_file: 'C:\\WorkSpace\\agent\\nanoclaw\\logs\\pm2-out.log',
     log_date_format: 'YYYY-MM-DD HH:mm:ss',
