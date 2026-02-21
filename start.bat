@@ -11,8 +11,8 @@ timeout /t 2 /nobreak >nul
 REM Create logs directory
 if not exist logs mkdir logs
 
-REM Start in background
-start /B node dist/index.js > logs\nanoclaw.log 2>&1
+REM Start in background with environment variables from .env
+start /B node --import dotenv/config dist/index.js > logs\nanoclaw.log 2>&1
 
 echo.
 echo [OK] NanoClaw started in background

@@ -136,65 +136,43 @@ mkdir -p data/env
 cp .env data/env/env
 ```
 
-### 11. 配置 PM2 启动（推荐）
+### 11. 启动服务
 
-创建 `ecosystem.config.cjs` 文件：
+**推荐方式：使用批处理脚本**
 
-```javascript
-module.exports = {
-  apps: [{
-    name: 'nanoclaw',
-    script: 'dist/index.js',
-    cwd: 'C:\\WorkSpace\\agent\\nanoclaw',
-    interpreter: 'node',
-    instances: 1,
-    autorestart: true,
-    watch: false,
-    max_memory_restart: '1G',
-    env: {
-      NODE_ENV: 'production',
-      ANTHROPIC_API_KEY: 'sk-dummy',
-      ANTHROPIC_BASE_URL: 'http://host.docker.internal:15721',
-      ASSISTANT_NAME: '<你的助手名称>',
-      ASSISTANT_HAS_OWN_NUMBER: 'false',
-      TELEGRAM_BOT_TOKEN: '<你的-telegram-bot-token>',
-      TELEGRAM_ONLY: 'true'
-    },
-    error_file: 'C:\\WorkSpace\\agent\\nanoclaw\\logs\\pm2-error.log',
-    out_file: 'C:\\WorkSpace\\agent\\nanoclaw\\logs\\pm2-out.log',
-    log_date_format: 'YYYY-MM-DD HH:mm:ss',
-    merge_logs: true,
-    max_restarts: 10,
-    min_uptime: '10s',
-    restart_delay: 5000
-  }]
-};
+```cmd
+start.bat
 ```
 
-**重要**：必须使用 `.cjs` 扩展名，因为项目使用 ES modules。
+这会自动：
+- 停止现有实例
+- 从 `.env` 文件加载环境变量
+- 在后台启动服务
+- 输出日志到 `logs/nanoclaw.log`
 
-启动服务：
+**其他管理命令：**
+- 停止服务：`stop.bat`
+- 查看日志：`tail-log.bat`
+- 完整菜单：`nanoclaw.bat`
 
-```bash
-pm2 start ecosystem.config.cjs
-pm2 status
-pm2 logs nanoclaw
-```
+**⚠️ 注意**：在 Windows 上**不推荐使用 PM2**，因为存在兼容性问题（环境变量加载失败、进程重启循环）
 
 ### 12. 验证运行状态
 
-```bash
-pm2 status
+```cmd
+tasklist | findstr node.exe
 ```
 
-应该看到：
-- `status` 为 `online`
-- `uptime` 持续增长（不是 0 或 1s）
-- `↺`（重启次数）为 0
+应该看到 1 个 `node.exe` 进程在运行。
 
-如果看到重启次数不断增加，说明进程在崩溃循环。检查日志：
-```bash
-pm2 logs nanoclaw --lines 100
+查看日志：
+```cmd
+type logs\nanoclaw.log
+```
+
+或实时查看：
+```cmd
+tail-log.bat
 ```
 
 ---
@@ -318,51 +296,38 @@ async function main(): Promise<void> {
 
 删除旧的 `ensureContainerSystemRunning()` 函数定义。
 
-### 问题 6: PM2 进程不断重启（PID 每次查询都在变化）
+### 问题 6: 服务启动后立即退出
 
-**症状**: `pm2 status` 显示 `↺` 列的数字不断增加，uptime 总是很小（0-1秒）
+**症状**: 运行 `start.bat` 后进程没有持续运行
 
-**原因**: PM2 没有加载 `.env` 文件中的环境变量，导致进程因缺少必要的环境变量而崩溃
+**可能原因**:
+1. `.env` 文件不存在或格式错误
+2. 必要的环境变量缺失
+3. 依赖包未安装
 
 **解决方案**:
 
-1. 创建 `ecosystem.config.cjs` 文件（不是 `.js`）：
-
-```javascript
-module.exports = {
-  apps: [{
-    name: 'nanoclaw',
-    script: 'dist/index.js',
-    cwd: 'C:\\WorkSpace\\agent\\nanoclaw',
-    env: {
-      ANTHROPIC_API_KEY: 'sk-dummy',
-      ANTHROPIC_BASE_URL: 'http://host.docker.internal:15721',
-      ASSISTANT_NAME: 'nex',
-      ASSISTANT_HAS_OWN_NUMBER: 'false',
-      TELEGRAM_BOT_TOKEN: '<your-token>',
-      TELEGRAM_ONLY: 'true'
-    },
-    error_file: 'logs/pm2-error.log',
-    out_file: 'logs/pm2-out.log',
-    max_restarts: 10,
-    min_uptime: '10s'
-  }]
-};
+1. 检查 `.env` 文件：
+```cmd
+type .env
 ```
 
-2. 删除旧进程并重新启动：
+确保包含所有必要的环境变量：
+- `TELEGRAM_BOT_TOKEN`
+- `ANTHROPIC_BASE_URL`
+- `ANTHROPIC_API_KEY`
+- `ASSISTANT_NAME`
+- `TELEGRAM_ONLY`
 
-```bash
-pm2 delete all
-pm2 start ecosystem.config.cjs
-pm2 logs  # 监控日志确认正常运行
+2. 前台运行查看详细错误：
+```cmd
+node --import dotenv/config dist/index.js
 ```
 
-**诊断命令**：
-```bash
-pm2 describe nanoclaw  # 查看重启次数
-pm2 logs nanoclaw --lines 100  # 查看错误日志
-pm2 env 0  # 查看环境变量是否正确设置
+3. 检查依赖：
+```cmd
+npm install
+npm run build
 ```
 
 ### 问题 7: Telegram Bot Privacy Mode
@@ -486,14 +451,49 @@ docker exec <container-name> curl http://host.docker.internal:15721
 
 ## 生产环境建议
 
-### 使用 PM2 管理 Node 进程
+### 使用 NSSM 作为 Windows 服务（推荐）
 
-```bash
-npm install -g pm2
-pm2 start dist/index.js --name nanoclaw
-pm2 save
-pm2 startup
+适合需要开机自启动和后台运行的场景：
+
+1. 下载 NSSM: https://nssm.cc/download
+2. 解压并添加到 PATH
+
+安装服务：
+```cmd
+nssm install NanoClaw
 ```
+
+在 GUI 中配置：
+- **Path**: `C:\Program Files\nodejs\node.exe`
+- **Startup directory**: `C:\WorkSpace\agent\nanoclaw`
+- **Arguments**: `--import dotenv/config dist/index.js`
+- **I/O** 标签页设置日志重定向（可选）
+
+或使用命令行：
+```cmd
+nssm install NanoClaw "C:\Program Files\nodejs\node.exe" "--import dotenv/config dist/index.js"
+nssm set NanoClaw AppDirectory "C:\WorkSpace\agent\nanoclaw"
+nssm set NanoClaw DisplayName "NanoClaw Telegram Bot"
+nssm start NanoClaw
+```
+
+管理命令：
+```cmd
+nssm status NanoClaw    # 查看状态
+nssm restart NanoClaw   # 重启
+nssm stop NanoClaw      # 停止
+nssm remove NanoClaw    # 删除服务
+```
+
+### 使用批处理脚本（简单方案）
+
+直接使用项目提供的脚本：
+- `start.bat` - 启动服务
+- `stop.bat` - 停止服务
+- `tail-log.bat` - 查看实时日志
+- `nanoclaw.bat` - 交互式菜单
+
+可以创建 Windows 任务计划程序任务来实现开机自启动。
 
 ### 日志轮转
 
@@ -534,62 +534,41 @@ docker ps | grep nanoclaw
 
 ---
 
-## PM2 管理命令
+## 服务管理命令
 
-### 基本命令
+### 使用批处理脚本
 
-```bash
-# 启动
-pm2 start ecosystem.config.cjs
-
-# 查看状态
-pm2 status
-
-# 查看日志（实时）
-pm2 logs nanoclaw
-
-# 查看最近日志
-pm2 logs nanoclaw --lines 100
-
-# 重启
-pm2 restart nanoclaw
-
-# 停止
-pm2 stop nanoclaw
-
-# 删除进程
-pm2 delete nanoclaw
-
-# 查看详细信息
-pm2 describe nanoclaw
-
-# 监控（CPU、内存）
-pm2 monit
+```cmd
+start.bat           # 启动服务
+stop.bat            # 停止服务
+tail-log.bat        # 查看实时日志
+nanoclaw.bat        # 交互式菜单
 ```
 
-### 日志位置
+### 使用 NSSM（Windows 服务）
 
-- **标准输出**: `C:\WorkSpace\agent\nanoclaw\logs\pm2-out.log`
-- **错误输出**: `C:\WorkSpace\agent\nanoclaw\logs\pm2-error.log`
-
-### 开机自启动
-
-**方案 1: pm2-windows-startup**
-
-```bash
-npm install -g pm2-windows-startup
-pm2-startup install
-pm2 save
+```cmd
+nssm status NanoClaw    # 查看状态
+nssm restart NanoClaw   # 重启服务
+nssm stop NanoClaw      # 停止服务
+nssm start NanoClaw     # 启动服务
+nssm remove NanoClaw    # 删除服务
 ```
 
-**方案 2: NSSM（更稳定）**
+### 手动管理
 
-```bash
-# 下载并解压 NSSM
-# 添加到 PATH
-nssm install NanoClaw
-# 在 GUI 中配置
-nssm start NanoClaw
+```cmd
+# 检查进程
+tasklist | findstr node.exe
+
+# 停止所有 node 进程
+taskkill /F /IM node.exe
+
+# 前台运行（调试用）
+node --import dotenv/config dist/index.js
+
+# 后台运行
+start /B node --import dotenv/config dist/index.js > logs\nanoclaw.log 2>&1
 ```
 
 ---
@@ -611,8 +590,6 @@ nssm start NanoClaw
 
 ## 推荐的启动方式（Windows）
 
-**不推荐使用 PM2** - 在 Windows 上有兼容性问题（进程重启循环、日志无法捕获）
-
 ### 方式 1: 使用批处理脚本（推荐）
 
 ```cmd
@@ -629,39 +606,61 @@ tail-log.bat
 nanoclaw.bat
 ```
 
-### 方式 2: 直接命令行
+**优点**：
+- 简单易用
+- 自动加载 `.env` 文件
+- 日志输出到文件
+- 适合开发和测试
+
+### 方式 2: 使用 NSSM（Windows 服务）
+
+适合需要开机自启动的生产环境：
 
 ```cmd
-# 前台运行（可看到实时日志）
-cd C:\WorkSpace\agent\nanoclaw
-node dist/index.js
-
-# 后台运行（重定向日志）
-cd C:\WorkSpace\agent\nanoclaw
-start /B node dist/index.js > logs\nanoclaw.log 2>&1
-```
-
-### 方式 3: 使用 NSSM（Windows 服务）
-
-适合需要开机自启动的场景：
-
-```bash
-# 下载 NSSM: https://nssm.cc/download
-# 添加到 PATH
-
-nssm install NanoClaw "C:\Program Files\nodejs\node.exe" "C:\WorkSpace\agent\nanoclaw\dist\index.js"
+# 安装服务（首次）
+nssm install NanoClaw "C:\Program Files\nodejs\node.exe" "--import dotenv/config dist/index.js"
 nssm set NanoClaw AppDirectory "C:\WorkSpace\agent\nanoclaw"
 nssm set NanoClaw DisplayName "NanoClaw Telegram Bot"
-nssm start NanoClaw
-```
 
-管理命令：
-```cmd
+# 启动服务
+nssm start NanoClaw
+
+# 管理服务
 nssm status NanoClaw    # 查看状态
 nssm restart NanoClaw   # 重启
 nssm stop NanoClaw      # 停止
-nssm remove NanoClaw    # 删除服务
 ```
+
+**优点**：
+- 开机自启动
+- 后台运行
+- 服务失败自动重启
+- 适合生产环境
+
+### 方式 3: 直接命令行（调试用）
+
+```cmd
+# 前台运行（可看到实时日志，按 Ctrl+C 停止）
+node --import dotenv/config dist/index.js
+
+# 后台运行（重定向日志）
+start /B node --import dotenv/config dist/index.js > logs\nanoclaw.log 2>&1
+```
+
+**优点**：
+- 直接看到日志输出
+- 方便调试
+- 无需额外工具
+
+### ⚠️ 不推荐：PM2
+
+PM2 在 Windows 上存在以下问题：
+- 环境变量加载失败（`env_file` 不生效）
+- 进程不断重启循环
+- 日志捕获不完整
+- 需要复杂的配置文件
+
+建议使用上述的批处理脚本或 NSSM 代替。
 
 ---
 
