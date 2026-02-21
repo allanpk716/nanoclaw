@@ -19,6 +19,7 @@ log "Starting verification"
 case "$(uname -s)" in
   Darwin*) PLATFORM="macos" ;;
   Linux*)  PLATFORM="linux" ;;
+  CYGWIN*|MINGW*|MSYS*) PLATFORM="windows" ;;
   *)       PLATFORM="unknown" ;;
 esac
 
@@ -41,6 +42,15 @@ elif [ "$PLATFORM" = "linux" ]; then
   elif systemctl --user list-unit-files 2>/dev/null | grep -q "nanoclaw"; then
     SERVICE="stopped"
   fi
+elif [ "$PLATFORM" = "windows" ]; then
+  # Windows: check for node.exe process
+  if tasklist 2>/dev/null | grep -q "node.exe"; then
+    SERVICE="running"
+    log "Windows: node.exe process found"
+  else
+    SERVICE="stopped"
+    log "Windows: node.exe process not found"
+  fi
 fi
 log "Service: $SERVICE"
 
@@ -61,6 +71,21 @@ if [ -f "$PROJECT_ROOT/.env" ]; then
   fi
 fi
 log "Credentials: $CREDENTIALS"
+
+# 3.5 Windows: Check data/env/env sync
+DATA_ENV_SYNCED="not_checked"
+if [ "$PLATFORM" = "windows" ]; then
+  DATA_ENV_SYNCED="missing"
+  if [ -f "$PROJECT_ROOT/data/env/env" ]; then
+    # Check if it matches .env
+    if cmp -s "$PROJECT_ROOT/.env" "$PROJECT_ROOT/data/env/env" 2>/dev/null; then
+      DATA_ENV_SYNCED="synced"
+    else
+      DATA_ENV_SYNCED="out_of_sync"
+    fi
+  fi
+  log "Windows data/env/env: $DATA_ENV_SYNCED"
+fi
 
 # 4. Check WhatsApp auth
 WHATSAPP_AUTH="not_found"
@@ -86,6 +111,11 @@ log "Mount allowlist: $MOUNT_ALLOWLIST"
 # Determine overall status
 STATUS="success"
 if [ "$SERVICE" != "running" ] || [ "$CREDENTIALS" = "missing" ] || [ "$WHATSAPP_AUTH" = "not_found" ] || [ "$REGISTERED_GROUPS" -eq 0 ] 2>/dev/null; then
+  STATUS="failed"
+fi
+
+# Windows-specific failure: data/env/env not synced
+if [ "$PLATFORM" = "windows" ] && [ "$DATA_ENV_SYNCED" = "missing" ]; then
   STATUS="failed"
 fi
 

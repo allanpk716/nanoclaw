@@ -86,6 +86,16 @@ Run `./.claude/skills/setup/scripts/03-setup-container.sh --runtime <chosen>` an
 
 If HAS_ENV=true from step 1, read `.env` and check if it already has `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY`. If so, confirm with user: "You already have Claude credentials configured. Want to keep them or reconfigure?" If keeping, skip to step 5.
 
+**Windows platform**: Run `./.claude/skills/setup/scripts/04.5-setup-env.sh` first. This will:
+- Create .env from .env.example if needed
+- Check for Windows-specific configuration (host.docker.internal)
+- Sync .env to data/env/env (critical for Docker on Windows)
+- Alert if TELEGRAM_BOT_TOKEN is not set
+
+Parse the status block. If STATUS=warning and WARNING=anthropic_base_url_not_windows_compatible, tell the user: "Your ANTHROPIC_BASE_URL is set to $CURRENT_VALUE. On Windows with Docker, this should be http://host.docker.internal:15721 to allow containers to access the host. Please update your .env file and re-run step 4."
+
+If TELEGRAM_CONFIGURED=false, continue with authentication setup below.
+
 AskUserQuestion: Claude subscription (Pro/Max) vs Anthropic API key?
 
 **Subscription:** Tell the user:
@@ -159,6 +169,18 @@ Run `./.claude/skills/setup/scripts/06-register-channel.sh` with args:
 - `--folder "main"` — always "main" for the first channel
 - `--no-trigger-required` — if personal chat, DM, or solo group
 - `--assistant-name "Name"` — if trigger word differs from "Andy"
+
+## 8.5. Create Directories (Windows Only)
+
+If PLATFORM=windows from step 1, run `./.claude/skills/setup/scripts/08.5-create-directories.sh`. This creates:
+- groups/main
+- data/env
+- data/sessions/main/.claude
+- data/ipc/main
+- logs
+- store
+
+These directories are required for NanoClaw to function. On Windows, they may not exist after git clone.
 
 ## 9. Mount Allowlist
 

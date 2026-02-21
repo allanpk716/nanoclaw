@@ -14,6 +14,22 @@ log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [configure-mounts] $*" >> "$LOG_FIL
 CONFIG_DIR="$HOME/.config/nanoclaw"
 CONFIG_FILE="$CONFIG_DIR/mount-allowlist.json"
 
+# Detect platform
+case "$(uname -s)" in
+  Darwin*) PLATFORM="macos" ;;
+  Linux*)  PLATFORM="linux" ;;
+  CYGWIN*|MINGW*|MSYS*) PLATFORM="windows" ;;
+  *)       PLATFORM="unknown" ;;
+esac
+
+# Windows path handling
+if [ "$PLATFORM" = "windows" ]; then
+  # Convert Windows HOME to forward slashes for consistency
+  WIN_HOME=$(echo "$HOME" | sed 's|\\|/|g')
+  CONFIG_DIR="$WIN_HOME/.config/nanoclaw"
+  CONFIG_FILE="$CONFIG_DIR/mount-allowlist.json"
+fi
+
 # Parse args
 EMPTY_MODE="false"
 while [[ $# -gt 0 ]]; do

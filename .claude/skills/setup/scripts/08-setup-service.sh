@@ -27,6 +27,7 @@ if [ -z "$PLATFORM" ]; then
   case "$(uname -s)" in
     Darwin*) PLATFORM="macos" ;;
     Linux*)  PLATFORM="linux" ;;
+    CYGWIN*|MINGW*|MSYS*) PLATFORM="windows" ;;
     *)       PLATFORM="unknown" ;;
   esac
 fi
@@ -175,6 +176,92 @@ PROJECT_PATH: $PROJECT_PATH
 UNIT_PATH: $UNIT_PATH
 SERVICE_LOADED: $SERVICE_LOADED
 STATUS: success
+LOG: logs/setup.log
+=== END ===
+EOF
+    ;;
+
+  windows)
+    log "Setting up Windows service with batch scripts"
+    # Windows uses batch scripts instead of service managers
+    # Just verify build succeeded and output instructions
+
+    # Create batch scripts if they don't exist
+    if [ ! -f "start.bat" ]; then
+      log "Creating start.bat"
+      cat > start.bat << 'BATEOF'
+@echo off
+REM Start NanoClaw (background mode)
+cd /d "%~dp0"
+
+echo Starting NanoClaw...
+
+REM Stop existing instances
+taskkill /F /IM node.exe >nul 2>nul
+timeout /t 2 /nobreak >nul
+
+REM Create logs directory
+if not exist logs mkdir logs
+
+REM Start in background with environment variables from .env
+start /B node --import dotenv/config dist/index.js > logs\nanoclaw.log 2>&1
+
+echo.
+echo [OK] NanoClaw started in background
+echo Log file: logs\nanoclaw.log
+echo.
+echo View log: type logs\nanoclaw.log
+echo Stop service: taskkill /F /IM node.exe
+echo.
+
+timeout /t 3 /nobreak >nul
+type logs\nanoclaw.log
+BATEOF
+    fi
+
+    if [ ! -f "stop.bat" ]; then
+      log "Creating stop.bat"
+      cat > stop.bat << 'BATEOF'
+@echo off
+REM Stop NanoClaw
+echo Stopping NanoClaw...
+taskkill /F /IM node.exe >nul 2>nul
+
+if %errorlevel% equ 0 (
+    echo [OK] NanoClaw stopped
+) else (
+    echo No running NanoClaw process found
+)
+BATEOF
+    fi
+
+    if [ ! -f "tail-log.bat" ]; then
+      log "Creating tail-log.bat"
+      cat > tail-log.bat << 'BATEOF'
+@echo off
+REM View NanoClaw logs
+if not exist logs\nanoclaw.log (
+    echo Log file not found: logs\nanoclaw.log
+    exit /b 1
+)
+
+echo Following logs (Ctrl+C to stop)...
+echo ========================================
+type logs\nanoclaw.log
+BATEOF
+    fi
+
+    SERVICE_LOADED="true"
+    log "Windows batch scripts ready"
+
+    cat <<EOF
+=== NANOCLAW SETUP: SETUP_SERVICE ===
+SERVICE_TYPE: windows_batch
+NODE_PATH: $NODE_PATH
+PROJECT_PATH: $PROJECT_PATH
+SERVICE_LOADED: $SERVICE_LOADED
+STATUS: success
+MESSAGE: Windows batch scripts created. Use start.bat to launch, stop.bat to stop.
 LOG: logs/setup.log
 === END ===
 EOF

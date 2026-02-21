@@ -16,11 +16,39 @@ log "Starting environment check"
 # Detect platform
 UNAME=$(uname -s)
 case "$UNAME" in
-  Darwin*) PLATFORM="macos" ;;
-  Linux*)  PLATFORM="linux" ;;
-  *)       PLATFORM="unknown" ;;
+  Darwin*)    PLATFORM="macos" ;;
+  Linux*)     PLATFORM="linux" ;;
+  CYGWIN*|MINGW*|MSYS*) PLATFORM="windows" ;;
+  *)          PLATFORM="unknown" ;;
 esac
 log "Platform: $PLATFORM ($UNAME)"
+
+# Windows specific checks
+if [ "$PLATFORM" = "windows" ]; then
+  log "Windows platform detected"
+  # Check if running in Git Bash or WSL
+  if command -v cmd.exe >/dev/null 2>&1; then
+    log "Running in Git Bash environment"
+  else
+    log "ERROR: Not running in Git Bash or WSL"
+    cat <<EOF
+=== NANOCLAW SETUP: CHECK_ENVIRONMENT ===
+PLATFORM: $PLATFORM
+NODE_VERSION: $NODE_VERSION
+NODE_OK: false
+APPLE_CONTAINER: not_found
+DOCKER: not_found
+HAS_ENV: false
+HAS_AUTH: false
+HAS_REGISTERED_GROUPS: false
+STATUS: failed
+ERROR: windows_requires_git_bash
+LOG: logs/setup.log
+=== END ===
+EOF
+    exit 2
+  fi
+fi
 
 # Check Node
 NODE_OK="false"
