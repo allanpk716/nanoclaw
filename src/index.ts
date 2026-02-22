@@ -445,26 +445,20 @@ function recoverPendingMessages(): void {
 function selfRestart(): never {
   logger.info('Spawning replacement process');
 
-  // On Windows, we need to use a shell to redirect output
-  // because the current process has the log file open
-  const logFile = path.join(process.cwd(), 'logs', 'nanoclaw.log');
-
-  // Use cmd.exe to spawn the new process with output redirection
+  // Use start.bat which already handles logging and process spawning correctly
   const child = spawn(
     'cmd.exe',
-    [
-      '/c',
-      `"${process.execPath}" "${process.argv[1]}" >> "${logFile}" 2>&1`,
-    ],
+    ['/c', 'start.bat'],
     {
       detached: true,
       cwd: process.cwd(),
       windowsHide: true,
+      stdio: 'ignore',
     },
   );
 
   child.unref();
-  logger.info({ pid: child.pid }, 'Replacement process started');
+  logger.info({ pid: child.pid }, 'Replacement process started via start.bat');
 
   // Exit current process
   process.exit(0);
