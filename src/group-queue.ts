@@ -1,4 +1,5 @@
 import { ChildProcess } from 'child_process';
+import { EventEmitter } from 'events';
 import fs from 'fs';
 import path from 'path';
 
@@ -22,9 +23,10 @@ interface GroupState {
   containerName: string | null;
   groupFolder: string | null;
   retryCount: number;
+  lastError: string | undefined;
 }
 
-export class GroupQueue {
+export class GroupQueue extends EventEmitter {
   private groups = new Map<string, GroupState>();
   private activeCount = 0;
   private waitingGroups: string[] = [];
@@ -43,6 +45,7 @@ export class GroupQueue {
         containerName: null,
         groupFolder: null,
         retryCount: 0,
+        lastError: undefined,
       };
       this.groups.set(groupJid, state);
     }
@@ -176,12 +179,15 @@ export class GroupQueue {
         const success = await this.processMessagesFn(groupJid);
         if (success) {
           state.retryCount = 0;
+          state.lastError = undefined;
         } else {
+          state.lastError = state.lastError || 'Container execution failed';
           this.scheduleRetry(groupJid, state);
         }
       }
     } catch (err) {
       logger.error({ groupJid, err }, 'Error processing messages for group');
+      state.lastError = err instanceof Error ? err.message : String(err);
       this.scheduleRetry(groupJid, state);
     } finally {
       state.active = false;
@@ -224,7 +230,17 @@ export class GroupQueue {
         { groupJid, retryCount: state.retryCount },
         'Max retries exceeded, dropping messages (will retry on next incoming message)',
       );
+
+      // Emit event for index.ts to handle notification
+      this.emit('max_retries_exceeded', {
+        groupJid,
+        groupFolder: state.groupFolder,
+        retryCount: state.retryCount,
+        lastError: state.lastError
+      });
+
       state.retryCount = 0;
+      state.lastError = undefined;
       return;
     }
 

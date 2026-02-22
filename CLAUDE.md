@@ -45,6 +45,16 @@ launchctl load ~/Library/LaunchAgents/com.nanoclaw.plist
 launchctl unload ~/Library/LaunchAgents/com.nanoclaw.plist
 ```
 
+### Development Guidelines
+
+- **Communication**: Respond in Chinese (中文回答)
+- **Script Development**: No Chinese characters in BAT scripts (use English only)
+- **Fixing Scripts**: Fix existing scripts in-place, avoid creating new scripts unless necessary
+- **Temporary Files**: Place all test code and data in `tmp/` folder at project root
+- **Image Processing**: Ensure images are smaller than 1000x1000 pixels before sending to OCR/vision services
+- **Project Plans**: Store project planning documents in `docs/plans/`
+- **Bug Tracking**: Document self-discovered bugs in `docs/bugs/`
+
 ## Container Build Cache
 
 The container buildkit caches the build context aggressively. `--no-cache` alone does NOT invalidate COPY steps — the builder's volume retains stale files. To force a truly clean rebuild, prune the builder then re-run `./container/build.sh`.

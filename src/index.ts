@@ -38,6 +38,7 @@ import {
   setSession,
   storeChatMetadata,
   storeMessage,
+  validateSession,
 } from './db.js';
 import { GroupQueue } from './group-queue.js';
 import { startIpcWatcher } from './ipc.js';
@@ -48,6 +49,41 @@ import { logger } from './logger.js';
 
 // Re-export for backwards compatibility during refactor
 export { escapeXml, formatMessages } from './router.js';
+
+/**
+ * Send error notification to user via available channels
+ */
+async function notifyContainerError(
+  channels: Channel[],
+  groupJid: string,
+  error: string,
+  containerLog?: string
+): Promise<void> {
+  try {
+    const channel = findChannel(channels, groupJid);
+    if (!channel) {
+      logger.warn({ groupJid }, 'Cannot send error notification: channel not found');
+      return;
+    }
+
+    // Format error message (keep under reasonable length)
+    let message = `⚠️ *容器执行失败*\n\n`;
+    message += `错误: \`${error.slice(0, 200)}\`\n\n`;
+
+    if (containerLog) {
+      const logPreview = containerLog.slice(-500);
+      message += `日志摘要:\n\`\`\`\n${logPreview}\n\`\`\``;
+    }
+
+    message += `\n💡 建议: 检查日志文件或重启服务`;
+
+    await channel.sendMessage(groupJid, message);
+    logger.info({ groupJid }, 'Sent error notification to user');
+  } catch (err) {
+    logger.error({ err, groupJid }, 'Failed to send error notification');
+  }
+}
+
 
 let lastTimestamp = '';
 let sessions: Record<string, string> = {};
@@ -223,6 +259,9 @@ async function runAgent(
   onOutput?: (output: ContainerOutput) => Promise<void>,
 ): Promise<'success' | 'error'> {
   const isMain = group.folder === MAIN_GROUP_FOLDER;
+
+  // Validate session before use - auto-fix if file is missing
+  validateSession(group.folder, DATA_DIR);
   const sessionId = sessions[group.folder];
 
   // Update tasks snapshot for container to read (filtered by group)
@@ -463,6 +502,29 @@ async function main(): Promise<void> {
     writeGroupsSnapshot: (gf, im, ag, rj) => writeGroupsSnapshot(gf, im, ag, rj),
   });
   queue.setProcessMessagesFn(processGroupMessages);
+
+  // Handle max retries exceeded event - notify user of failures
+  queue.on('max_retries_exceeded', async (data) => {
+    const { groupJid, groupFolder, lastError } = data;
+
+    // Get last container log
+    const logDir = path.join(DATA_DIR, '..', 'groups', groupFolder || '', 'logs');
+    let containerLog: string | undefined;
+    try {
+      const logFiles = fs.readdirSync(logDir)
+        .filter(f => f.startsWith('container-'))
+        .sort()
+        .reverse();
+      if (logFiles.length > 0) {
+        containerLog = fs.readFileSync(path.join(logDir, logFiles[0]), 'utf-8');
+      }
+    } catch (err) {
+      logger.error({ err }, 'Failed to read container log for error notification');
+    }
+
+    await notifyContainerError(channels, groupJid, lastError || 'Unknown error', containerLog);
+  });
+
   recoverPendingMessages();
   startMessageLoop();
 }

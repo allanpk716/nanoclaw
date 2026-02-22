@@ -490,6 +490,40 @@ export function setSession(groupFolder: string, sessionId: string): void {
   ).run(groupFolder, sessionId);
 }
 
+/**
+ * Validate that a session file exists. If not, clear it from the database.
+ * Returns true if session is valid or was cleared, false on error.
+ */
+export function validateSession(groupFolder: string, sessionsDir: string): boolean {
+  const session = getSession(groupFolder);
+  if (!session) return true; // No session record is fine
+
+  const sessionId = session;
+  // Session path in container: /workspace/group -> groups/{folder}/
+  // But SDK stores in ~/.claude/projects/{encoded-path}/{sessionId}.jsonl
+  // The sessions are mounted at: data/sessions/{folder}/.claude
+  const projectPath = path.join(sessionsDir, groupFolder, '.claude', 'projects');
+
+  // Find the project directory (name varies by platform)
+  try {
+    const projects = fs.readdirSync(projectPath);
+    for (const proj of projects) {
+      const sessionFile = path.join(projectPath, proj, `${sessionId}.jsonl`);
+      if (fs.existsSync(sessionFile)) {
+        return true; // Session file found
+      }
+    }
+
+    // Session file not found in any project dir - clear it
+    console.warn(`[WARN] Session file missing for ${groupFolder}, clearing from database`);
+    db.prepare('DELETE FROM sessions WHERE group_folder = ?').run(groupFolder);
+    return true;
+  } catch (err) {
+    console.error(`[ERROR] Failed to validate session for ${groupFolder}:`, err);
+    return false;
+  }
+}
+
 export function getAllSessions(): Record<string, string> {
   const rows = db
     .prepare('SELECT group_folder, session_id FROM sessions')

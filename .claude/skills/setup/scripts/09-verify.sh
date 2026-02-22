@@ -43,13 +43,39 @@ elif [ "$PLATFORM" = "linux" ]; then
     SERVICE="stopped"
   fi
 elif [ "$PLATFORM" = "windows" ]; then
-  # Windows: check for node.exe process
-  if tasklist 2>/dev/null | grep -q "node.exe"; then
-    SERVICE="running"
-    log "Windows: node.exe process found"
+  # Windows: check for NanoClaw via PID file (new installations)
+  if [ -f "$PROJECT_ROOT/nanoclaw.pid" ]; then
+    SERVICE_PID=$(cat "$PROJECT_ROOT/nanoclaw.pid")
+    log "Found PID file: $SERVICE_PID"
+
+    # Verify process exists
+    if tasklist /FI "PID eq $SERVICE_PID" 2>/dev/null | grep -q "node.exe"; then
+      # Verify it's actually NanoClaw (not another node process)
+      if wmic process where "ProcessId=$SERVICE_PID" get CommandLine 2>/dev/null | grep -q "dist/index.js"; then
+        SERVICE="running"
+        log "Service verified: PID $SERVICE_PID is NanoClaw"
+      else
+        log "WARNING: PID $SERVICE_PID exists but is not NanoClaw"
+        SERVICE="stopped"
+        # Clean up stale PID file
+        rm -f "$PROJECT_ROOT/nanoclaw.pid"
+      fi
+    else
+      log "PID $SERVICE_PID not found in process list"
+      SERVICE="stopped"
+      # Clean up stale PID file
+      rm -f "$PROJECT_ROOT/nanoclaw.pid"
+    fi
   else
-    SERVICE="stopped"
-    log "Windows: node.exe process not found"
+    # Fallback: check for any node.exe (legacy installations)
+    log "No PID file found, checking for node.exe processes"
+    if tasklist 2>/dev/null | grep -q "node.exe"; then
+      SERVICE="running_unverified"
+      log "Found node.exe but cannot verify if it's NanoClaw (no PID file)"
+    else
+      SERVICE="stopped"
+      log "No node.exe processes found"
+    fi
   fi
 fi
 log "Service: $SERVICE"
