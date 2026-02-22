@@ -46,6 +46,7 @@ import { findChannel, formatMessages, formatOutbound } from './router.js';
 import { startSchedulerLoop } from './task-scheduler.js';
 import { Channel, NewMessage, RegisteredGroup } from './types.js';
 import { logger } from './logger.js';
+import { startAdminServer, stopAdminServer } from './admin-server.js';
 
 // Re-export for backwards compatibility during refactor
 export { escapeXml, formatMessages } from './router.js';
@@ -438,6 +439,50 @@ function recoverPendingMessages(): void {
   }
 }
 
+/**
+ * Self-restart: spawn a new process and exit
+ */
+function selfRestart(): never {
+  const { spawn } = require('child_process');
+  logger.info('Spawning replacement process');
+
+  // Spawn new process with same arguments
+  const child = spawn(process.execPath, [process.argv[1], ...process.argv.slice(2)], {
+    stdio: 'inherit',
+    detached: true,
+    cwd: process.cwd(),
+  });
+
+  child.unref();
+  logger.info({ pid: child.pid }, 'Replacement process started');
+
+  // Exit current process
+  process.exit(0);
+}
+
+/**
+ * Self-update: git pull, npm build, then restart
+ */
+async function selfUpdate(): Promise<void> {
+  logger.info('Starting self-update');
+
+  try {
+    // Git pull
+    logger.info('Running git pull');
+    execSync('git pull', { stdio: 'inherit', cwd: process.cwd() });
+
+    // NPM build
+    logger.info('Running npm run build');
+    execSync('npm run build', { stdio: 'inherit', cwd: process.cwd() });
+
+    logger.info('Build complete, restarting');
+    selfRestart();
+  } catch (err) {
+    logger.error({ err }, 'Self-update failed');
+    // Don't exit - keep running with old code
+  }
+}
+
 async function main(): Promise<void> {
   ensureContainerRuntimeRunning();
   cleanupOrphans();
@@ -448,6 +493,7 @@ async function main(): Promise<void> {
   // Graceful shutdown handlers
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'Shutdown signal received');
+    await stopAdminServer();
     await queue.shutdown(10000);
     for (const ch of channels) await ch.disconnect();
     process.exit(0);
@@ -475,6 +521,13 @@ async function main(): Promise<void> {
     channels.push(telegram);
     await telegram.connect();
   }
+
+  // Start admin HTTP server
+  startAdminServer({
+    onShutdown: () => shutdown('admin'),
+    onRestart: selfRestart,
+    onUpdate: selfUpdate,
+  });
 
   // Start subsystems (independently of connection handler)
   startSchedulerLoop({
