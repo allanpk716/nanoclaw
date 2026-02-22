@@ -13,6 +13,7 @@ export interface TelegramChannelOpts {
   onMessage: OnInboundMessage;
   onChatMetadata: OnChatMetadata;
   registeredGroups: () => Record<string, RegisteredGroup>;
+  onUpdate?: () => Promise<void>;
 }
 
 export class TelegramChannel implements Channel {
@@ -50,6 +51,34 @@ export class TelegramChannel implements Channel {
     this.bot.command('ping', (ctx) => {
       ctx.reply(`${ASSISTANT_NAME} is online.`);
     });
+
+    // Command to trigger self-update (if handler provided)
+    if (this.opts.onUpdate) {
+      this.bot.command('update', async (ctx) => {
+        const chatId = `tg:${ctx.chat.id}`;
+        const group = this.opts.registeredGroups()[chatId];
+
+        // Only allow in registered groups
+        if (!group) {
+          ctx.reply('This command is only available in registered groups.');
+          return;
+        }
+
+        // Only allow in main group
+        if (group.folder !== 'main') {
+          ctx.reply('Update command is only available in the main group.');
+          return;
+        }
+
+        await ctx.reply('Starting self-update...');
+        try {
+          await this.opts.onUpdate!();
+        } catch (err) {
+          logger.error({ err }, 'Self-update failed');
+          await ctx.reply('Self-update failed. Check logs for details.');
+        }
+      });
+    }
 
     this.bot.on('message:text', async (ctx) => {
       // Skip commands
