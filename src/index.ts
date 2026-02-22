@@ -446,14 +446,21 @@ function selfRestart(): never {
   logger.info('Spawning replacement process');
 
   // Spawn new process with same arguments
+  // Redirect output to log file to maintain logging after restart
+  const logFile = path.join(process.cwd(), 'logs', 'nanoclaw.log');
+  const logStream = fs.openSync(logFile, 'a');
+
   const child = spawn(process.execPath, [process.argv[1], ...process.argv.slice(2)], {
-    stdio: 'inherit',
+    stdio: ['ignore', logStream, logStream],
     detached: true,
     cwd: process.cwd(),
   });
 
   child.unref();
   logger.info({ pid: child.pid }, 'Replacement process started');
+
+  // Close log file handle in parent
+  // Child has its own handle now
 
   // Exit current process
   process.exit(0);
@@ -577,6 +584,34 @@ async function main(): Promise<void> {
 
     await notifyContainerError(channels, groupJid, lastError || 'Unknown error', containerLog);
   });
+
+  // Send startup notification to main group
+  try {
+    const packageJsonPath = path.join(process.cwd(), 'package.json');
+    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+
+    const mainGroupEntry = Object.entries(registeredGroups).find(
+      ([_, group]) => group.folder === MAIN_GROUP_FOLDER
+    );
+
+    if (mainGroupEntry) {
+      const [mainGroupJid] = mainGroupEntry;
+      const channel = findChannel(channels, mainGroupJid);
+
+      if (channel) {
+        const startupTime = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
+        await channel.sendMessage(
+          mainGroupJid,
+          `✅ NanoClaw 启动成功\n📦 版本: v${packageJson.version}\n🕐 时间: ${startupTime}\n🔧 PID: ${process.pid}`
+        );
+        logger.info({ version: packageJson.version, pid: process.pid }, 'Startup notification sent');
+      }
+    } else {
+      logger.warn('Main group not found, skipping startup notification');
+    }
+  } catch (err) {
+    logger.error({ err }, 'Failed to send startup notification');
+  }
 
   recoverPendingMessages();
   startMessageLoop();

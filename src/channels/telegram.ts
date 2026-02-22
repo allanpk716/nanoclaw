@@ -23,10 +23,14 @@ export class TelegramChannel implements Channel {
   private opts: TelegramChannelOpts;
   private botToken: string;
   private typingIntervals: Map<string, ReturnType<typeof setInterval>> = new Map();
+  private startupTime: number = Date.now();
+  private ignoreCommandsUntil: number;
 
   constructor(botToken: string, opts: TelegramChannelOpts) {
     this.botToken = botToken;
     this.opts = opts;
+    // Ignore commands for 5 seconds after startup to avoid processing old messages
+    this.ignoreCommandsUntil = Date.now() + 5000;
   }
 
   async connect(): Promise<void> {
@@ -57,6 +61,32 @@ export class TelegramChannel implements Channel {
       this.bot.command('update', async (ctx) => {
         const chatId = `tg:${ctx.chat.id}`;
         const group = this.opts.registeredGroups()[chatId];
+
+        // Ignore commands received during startup grace period
+        if (Date.now() < this.ignoreCommandsUntil) {
+          logger.warn(
+            {
+              chatId,
+              userId: ctx.from?.id,
+              messageText: ctx.message?.text,
+              timeSinceStartup: `${((Date.now() - this.startupTime) / 1000).toFixed(1)}s`,
+            },
+            'Ignored /update command during startup grace period',
+          );
+          return;
+        }
+
+        // Log who triggered the update
+        logger.info(
+          {
+            chatId,
+            userId: ctx.from?.id,
+            username: ctx.from?.username,
+            firstName: ctx.from?.first_name,
+            messageText: ctx.message?.text,
+          },
+          '/update command triggered',
+        );
 
         // Only allow in registered groups
         if (!group) {
