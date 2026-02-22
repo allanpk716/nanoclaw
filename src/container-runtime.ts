@@ -3,15 +3,42 @@
  * All runtime-specific logic lives here so swapping runtimes means changing one file.
  */
 import { execSync } from 'child_process';
+import path from 'path';
 
 import { logger } from './logger.js';
 
 /** The container runtime binary name. */
 export const CONTAINER_RUNTIME_BIN = 'docker';
 
+/**
+ * Convert Windows path to Docker-compatible format.
+ * On Windows, Docker Desktop requires forward slashes and proper path format.
+ */
+function toDockerPath(hostPath: string): string {
+  if (process.platform === 'win32') {
+    // Normalize the path first
+    let dockerPath = path.normalize(hostPath);
+    // Convert backslashes to forward slashes
+    dockerPath = dockerPath.replace(/\\/g, '/');
+    // Convert drive letter format: C:/path -> /c/path for Docker Desktop
+    if (dockerPath.match(/^[A-Za-z]:/)) {
+      const driveLetter = dockerPath[0].toLowerCase();
+      const pathWithoutDrive = dockerPath.slice(2); // Remove "C:"
+      dockerPath = '/' + driveLetter + pathWithoutDrive;
+    }
+    return dockerPath;
+  }
+  return hostPath;
+}
+
 /** Returns CLI args for a readonly bind mount. */
 export function readonlyMountArgs(hostPath: string, containerPath: string): string[] {
-  return ['-v', `${hostPath}:${containerPath}:ro`];
+  return ['-v', `${toDockerPath(hostPath)}:${containerPath}:ro`];
+}
+
+/** Returns CLI args for a read-write bind mount. */
+export function readWriteMountArgs(hostPath: string, containerPath: string): string[] {
+  return ['-v', `${toDockerPath(hostPath)}:${containerPath}`];
 }
 
 /** Returns the shell command to stop a container by name. */

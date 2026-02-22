@@ -17,7 +17,7 @@ import {
 } from './config.js';
 import { readEnvFile } from './env.js';
 import { logger } from './logger.js';
-import { CONTAINER_RUNTIME_BIN, readonlyMountArgs, stopContainer } from './container-runtime.js';
+import { CONTAINER_RUNTIME_BIN, readonlyMountArgs, readWriteMountArgs, stopContainer } from './container-runtime.js';
 import { validateAdditionalMounts } from './mount-security.js';
 import { RegisteredGroup } from './types.js';
 
@@ -109,6 +109,14 @@ function buildVolumeMounts(
     '.claude',
   );
   fs.mkdirSync(groupSessionsDir, { recursive: true });
+
+  // Pre-create SDK subdirectories to avoid ENOENT errors in container
+  // Windows bind mounts don't allow container to create directories
+  const sdkDirs = ['debug', 'projects', 'skills', 'todos', 'plans', 'session-env', 'shell-snapshots', 'telemetry'];
+  for (const dir of sdkDirs) {
+    fs.mkdirSync(path.join(groupSessionsDir, dir), { recursive: true });
+  }
+
   const settingsFile = path.join(groupSessionsDir, 'settings.json');
   if (!fs.existsSync(settingsFile)) {
     fs.writeFileSync(settingsFile, JSON.stringify({
@@ -207,7 +215,7 @@ function buildContainerArgs(mounts: VolumeMount[], containerName: string): strin
     if (mount.readonly) {
       args.push(...readonlyMountArgs(mount.hostPath, mount.containerPath));
     } else {
-      args.push('-v', `${mount.hostPath}:${mount.containerPath}`);
+      args.push(...readWriteMountArgs(mount.hostPath, mount.containerPath));
     }
   }
 
