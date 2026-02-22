@@ -11,7 +11,7 @@ export interface AdminServerOptions {
   onUpdate: () => Promise<void>;
 }
 
-let adminToken: string;
+let adminToken: string = '';
 let server: http.Server | null = null;
 let startTime = Date.now();
 
@@ -56,7 +56,7 @@ function initToken(): string {
  */
 function validateAuth(req: http.IncomingMessage): boolean {
   const authHeader = req.headers['x-admin-token'];
-  if (!authHeader) return false;
+  if (typeof authHeader !== 'string') return false;
   return authHeader === adminToken;
 }
 
@@ -90,7 +90,13 @@ async function handleShutdown(
   }
   sendJson(res, 200, { status: 'shutting down' });
   logger.info('Admin shutdown requested');
-  setTimeout(() => options.onShutdown(), 100);
+  setTimeout(async () => {
+    try {
+      await options.onShutdown();
+    } catch (err) {
+      logger.error({ err }, 'Shutdown callback failed');
+    }
+  }, 100);
 }
 
 /**
@@ -107,7 +113,13 @@ async function handleRestart(
   }
   sendJson(res, 200, { status: 'restarting' });
   logger.info('Admin restart requested');
-  setTimeout(() => options.onRestart(), 100);
+  setTimeout(async () => {
+    try {
+      await options.onRestart();
+    } catch (err) {
+      logger.error({ err }, 'Restart callback failed');
+    }
+  }, 100);
 }
 
 /**
@@ -124,14 +136,29 @@ async function handleUpdate(
   }
   sendJson(res, 200, { status: 'updating' });
   logger.info('Admin update requested');
-  setTimeout(() => options.onUpdate(), 100);
+  setTimeout(async () => {
+    try {
+      await options.onUpdate();
+    } catch (err) {
+      logger.error({ err }, 'Update callback failed');
+    }
+  }, 100);
 }
 
 /**
  * Start the admin HTTP server
  */
 export function startAdminServer(options: AdminServerOptions): http.Server | null {
-  adminToken = initToken();
+  // Prevent multiple starts from regenerating token
+  if (server) {
+    logger.warn('Admin server already running');
+    return server;
+  }
+
+  // Only initialize token once
+  if (!adminToken) {
+    adminToken = initToken();
+  }
   startTime = Date.now();
 
   server = http.createServer(async (req, res) => {
