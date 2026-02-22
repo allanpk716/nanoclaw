@@ -262,7 +262,7 @@ async function runAgent(
   const isMain = group.folder === MAIN_GROUP_FOLDER;
 
   // Validate session before use - auto-fix if file is missing
-  validateSession(group.folder, DATA_DIR);
+  validateSession(group.folder, path.join(DATA_DIR, 'sessions'));
   const sessionId = sessions[group.folder];
 
   // Update tasks snapshot for container to read (filtered by group)
@@ -410,6 +410,8 @@ async function startMessageLoop(): Promise<void> {
             channel.setTyping?.(chatJid, true);
           } else {
             // No active container — enqueue for a new one
+            // Show typing indicator while waiting for container to start
+            channel.setTyping?.(chatJid, true);
             queue.enqueueMessageCheck(chatJid);
           }
         }
