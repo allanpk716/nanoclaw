@@ -1,4 +1,4 @@
-import { execSync } from 'child_process';
+import { execSync, spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
@@ -443,7 +443,6 @@ function recoverPendingMessages(): void {
  * Self-restart: spawn a new process and exit
  */
 function selfRestart(): never {
-  const { spawn } = require('child_process');
   logger.info('Spawning replacement process');
 
   // Spawn new process with same arguments
