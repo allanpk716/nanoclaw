@@ -10,6 +10,8 @@ const envConfig = readEnvFile([
   'ASSISTANT_HAS_OWN_NUMBER',
   'TELEGRAM_BOT_TOKEN',
   'TELEGRAM_ONLY',
+  'ADMIN_TOKEN',
+  'ADMIN_PORT',
 ]);
 
 export const ASSISTANT_NAME =
@@ -74,3 +76,11 @@ export const TELEGRAM_BOT_TOKEN =
   process.env.TELEGRAM_BOT_TOKEN || envConfig.TELEGRAM_BOT_TOKEN || '';
 export const TELEGRAM_ONLY =
   (process.env.TELEGRAM_ONLY || envConfig.TELEGRAM_ONLY) === 'true';
+
+// Admin interface configuration
+export const ADMIN_PORT = parseInt(
+  process.env.ADMIN_PORT || envConfig.ADMIN_PORT || '9999',
+  10,
+);
+export const ADMIN_TOKEN =
+  process.env.ADMIN_TOKEN || envConfig.ADMIN_TOKEN || '';
