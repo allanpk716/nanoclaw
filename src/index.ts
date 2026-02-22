@@ -442,26 +442,63 @@ function recoverPendingMessages(): void {
 /**
  * Self-restart: spawn a new process and exit
  */
-function selfRestart(): never {
+async function selfRestart(): Promise<void> {
   logger.info('Spawning replacement process');
 
-  // Use start.bat which already handles logging and process spawning correctly
-  const child = spawn(
-    'cmd.exe',
-    ['/c', 'start.bat'],
-    {
-      detached: true,
-      cwd: process.cwd(),
-      windowsHide: true,
+  // Use a timestamped log file to avoid file locking
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const logFile = path.join(process.cwd(), 'logs', `nanoclaw-${timestamp}.log`);
+  const taskName = 'NanoClaw-Restart';
+
+  // Create a batch file to start the process
+  const tempBat = path.join(process.cwd(), 'restart-temp.bat');
+  const batContent = `@echo off
+cd /d "${process.cwd()}"
+"${process.execPath}" dist/index.js >> "${logFile}" 2>&1
+exit
+`;
+
+  try {
+    fs.writeFileSync(tempBat, batContent);
+  } catch (err) {
+    logger.error({ err }, 'Failed to create restart batch file');
+    throw err;
+  }
+
+  // Delete any existing scheduled task
+  try {
+    execSync(`schtasks /delete /tn "${taskName}" /f`, { stdio: 'ignore' });
+  } catch {
+    // Task doesn't exist, ignore
+  }
+
+  // Create a one-time scheduled task to run immediately
+  try {
+    execSync(`schtasks /create /tn "${taskName}" /tr "\"${tempBat}\"" /sc once /st 00:00 /f`, {
       stdio: 'ignore',
-    },
-  );
+    });
 
-  child.unref();
-  logger.info({ pid: child.pid }, 'Replacement process started via start.bat');
+    // Run the task immediately
+    execSync(`schtasks /run /tn "${taskName}"`, { stdio: 'ignore' });
 
-  // Exit current process
-  process.exit(0);
+    logger.info({ logFile }, 'Replacement process started via scheduled task');
+
+    // Give the task a moment to start
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    // Delete the task (it has already run)
+    try {
+      execSync(`schtasks /delete /tn "${taskName}" /f`, { stdio: 'ignore' });
+    } catch {
+      // Ignore cleanup errors
+    }
+
+    // Exit current process
+    process.exit(0);
+  } catch (err) {
+    logger.error({ err }, 'Failed to create/run scheduled task');
+    throw err;
+  }
 }
 
 /**
