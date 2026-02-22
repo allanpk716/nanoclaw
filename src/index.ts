@@ -445,22 +445,26 @@ function recoverPendingMessages(): void {
 function selfRestart(): never {
   logger.info('Spawning replacement process');
 
-  // Spawn new process with same arguments
-  // Redirect output to log file to maintain logging after restart
+  // On Windows, we need to use a shell to redirect output
+  // because the current process has the log file open
   const logFile = path.join(process.cwd(), 'logs', 'nanoclaw.log');
-  const logStream = fs.openSync(logFile, 'a');
 
-  const child = spawn(process.execPath, [process.argv[1], ...process.argv.slice(2)], {
-    stdio: ['ignore', logStream, logStream],
-    detached: true,
-    cwd: process.cwd(),
-  });
+  // Use cmd.exe to spawn the new process with output redirection
+  const child = spawn(
+    'cmd.exe',
+    [
+      '/c',
+      `"${process.execPath}" "${process.argv[1]}" >> "${logFile}" 2>&1`,
+    ],
+    {
+      detached: true,
+      cwd: process.cwd(),
+      windowsHide: true,
+    },
+  );
 
   child.unref();
   logger.info({ pid: child.pid }, 'Replacement process started');
-
-  // Close log file handle in parent
-  // Child has its own handle now
 
   // Exit current process
   process.exit(0);
